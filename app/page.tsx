@@ -1,7 +1,7 @@
 "use client";
 
 import type { CSSProperties } from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 type Category = "Все" | "Города" | "Медицина" | "Экология" | "Промышленность" | "Образование";
 type Mission = {
@@ -71,8 +71,31 @@ export default function Home(){
   const [toast,setToast]=useState("");
   const [guide,setGuide]=useState(false);
   const [scrollProgress,setScrollProgress]=useState(0);
+  const [soundOn,setSoundOn]=useState(false);
+  const audioRef=useRef<AudioContext|null>(null);
 
-  useEffect(()=>{ try{ setFavorites(JSON.parse(localStorage.getItem("sorazum-favorites")||"[]")); setCustom(JSON.parse(localStorage.getItem("sorazum-missions")||"[]")); }catch{} },[]);
+  const playSound=(kind:"tap"|"success"|"synthesis",force=false)=>{
+    if(!soundOn&&!force||typeof window==="undefined")return;
+    const AudioEngine=window.AudioContext;
+    const context=audioRef.current||new AudioEngine();audioRef.current=context;
+    if(context.state==="suspended")void context.resume();
+    const notes=kind==="tap"?[520]:kind==="success"?[523,659,784]:[220,277,330,440,554];
+    const now=context.currentTime;
+    notes.forEach((frequency,index)=>{
+      const oscillator=context.createOscillator();const gain=context.createGain();
+      oscillator.type=kind==="synthesis"?"sine":"triangle";
+      oscillator.frequency.setValueAtTime(frequency,now+index*.055);
+      if(kind==="tap")oscillator.frequency.exponentialRampToValueAtTime(650,now+.055);
+      gain.gain.setValueAtTime(.0001,now+index*.055);
+      gain.gain.exponentialRampToValueAtTime(kind==="tap"?.018:.028,now+index*.055+.008);
+      gain.gain.exponentialRampToValueAtTime(.0001,now+index*.055+(kind==="tap"?.075:.18));
+      oscillator.connect(gain);gain.connect(context.destination);
+      oscillator.start(now+index*.055);oscillator.stop(now+index*.055+(kind==="tap"?.08:.2));
+    });
+  };
+  const toggleSound=()=>{const next=!soundOn;setSoundOn(next);localStorage.setItem("sorazum-sound",JSON.stringify(next));if(next)window.setTimeout(()=>playSound("success",true),20)};
+
+  useEffect(()=>{ try{ setFavorites(JSON.parse(localStorage.getItem("sorazum-favorites")||"[]")); setCustom(JSON.parse(localStorage.getItem("sorazum-missions")||"[]")); setSoundOn(JSON.parse(localStorage.getItem("sorazum-sound")||"false")); }catch{} },[]);
   useEffect(()=>localStorage.setItem("sorazum-favorites",JSON.stringify(favorites)),[favorites]);
   useEffect(()=>localStorage.setItem("sorazum-missions",JSON.stringify(custom)),[custom]);
   useEffect(()=>{ const close=(e:KeyboardEvent)=>{ if(e.key==="Escape"){setMenu(false);setSelected(null);setCustomer(false);setWorkspace(false)} }; window.addEventListener("keydown",close); return()=>window.removeEventListener("keydown",close) },[]);
@@ -86,6 +109,12 @@ export default function Home(){
     document.querySelectorAll<HTMLElement>("[data-reveal]").forEach(element=>observer.observe(element));
     return()=>observer.disconnect();
   },[]);
+  useEffect(()=>{
+    if(!soundOn)return;
+    const tap=(event:PointerEvent)=>{if((event.target as HTMLElement).closest("button,a"))playSound("tap")};
+    document.addEventListener("pointerdown",tap);
+    return()=>document.removeEventListener("pointerdown",tap);
+  },[soundOn]);
 
   const missions=useMemo(()=>[...custom,...seedMissions],[custom]);
   const visible=useMemo(()=>{
@@ -95,12 +124,12 @@ export default function Home(){
     if(sort==="deadline") return [...list].sort((a,b)=>a.days-b.days);
     return list;
   },[missions,query,category,sort]);
-  const notify=(text:string)=>{setToast(text);window.setTimeout(()=>setToast(""),2600)};
+  const notify=(text:string)=>{setToast(text);playSound("success");window.setTimeout(()=>setToast(""),2600)};
   const toggleFavorite=(id:string)=>setFavorites(v=>v.includes(id)?v.filter(x=>x!==id):[...v,id]);
   const toggleSkill=(skill:string)=>setSkills(v=>v.includes(skill)?v.filter(x=>x!==skill):[...v,skill]);
   const matchTeam=()=>{if(!name.trim()||!skills.length)return;setMatching(true);window.setTimeout(()=>{setMatching(false);setJoinStep(2)},1400)};
   const moveTask=(id:number)=>{const next:Record<TaskStatus,TaskStatus>={todo:"doing",doing:"done",done:"todo"};setTasks(v=>v.map(t=>t.id===id?{...t,status:next[t.status]}:t))};
-  const runSynthesis=()=>{if(synthesis==="running")return;setWorkTab("synthesis");setSynthesis("running");setSynthProgress(6);let p=6;const timer=window.setInterval(()=>{p+=9;setSynthProgress(Math.min(p,100));if(p>=100){window.clearInterval(timer);setSynthesis("ready")}},190)};
+  const runSynthesis=()=>{if(synthesis==="running")return;playSound("synthesis");setWorkTab("synthesis");setSynthesis("running");setSynthProgress(6);let p=6;const timer=window.setInterval(()=>{p+=9;setSynthProgress(Math.min(p,100));if(p>=100){window.clearInterval(timer);setSynthesis("ready");playSound("success")}},190)};
   const sendMessage=()=>{if(!message.trim())return;setMessages(v=>[...v,`${name||"Максим"}: ${message.trim()}`]);setMessage("")};
   const publish=()=>{const m:Mission={id:`custom-${Date.now()}`,category:"Города",location:"Весь мир · онлайн",title:draft.title,description:draft.problem,goal:draft.result,fund:Number(draft.fund.replace(/\D/g,""))||600000,days:Number(draft.days)||30,people:0,skills:["Аналитика","Исследования","Продукт"],deliverables:["Анализ проблемы","Несколько решений","План пилота"],featured:true,new:true};setCustom(v=>[m,...v]);setCustomer(false);setCustomerStep(1);setDraft({org:"",title:"",problem:"",result:"",fund:"600000",days:"30"});notify("Миссия опубликована в каталоге");window.setTimeout(()=>document.getElementById("missions")?.scrollIntoView({behavior:"smooth"}),80)};
   const done=tasks.filter(t=>t.status==="done").length;
@@ -141,6 +170,7 @@ export default function Home(){
       {workTab==="synthesis"&&<div className="work-view synth-view"><div className="view-heading"><div><span>SORAZUM AI · ФИНАЛ УТВЕРЖДАЕТ ЧЕЛОВЕК</span><h2>Синтез решений</h2></div>{synthesis==="idle"&&<button onClick={runSynthesis}>Запустить анализ ✦</button>}</div>{synthesis==="idle"&&<div className="synth-empty"><i>✦</i><h3>Три решения готовы к сравнению</h3><p>ИИ найдёт совпадения, противоречия и совместимые элементы.</p><button className="primary-button" onClick={runSynthesis}>Начать синтез</button></div>}{synthesis==="running"&&<div className="synth-running"><Ring value={synthProgress}/><h3>ИИ сравнивает 47 элементов</h3><p>{synthProgress<40?"Выделяем ключевые идеи…":synthProgress<75?"Проверяем совместимость…":"Формируем карту вклада…"}</p><i><em style={{width:`${synthProgress}%`}}/></i></div>}{synthesis==="ready"&&<div className="synth-ready"><header><span>✓ СИНТЕЗ ЗАВЕРШЁН</span><h3>Безопасная зона высадки с прогнозом утреннего потока</h3><p>Соединены маршрут команды A, сценарий команды B и модель команды C.</p></header><div>{[["A · 42%","Схема движения"],["B · 24%","Работа с родителями"],["C · 34%","Прогноз потока"]].map(x=><article key={x[0]}><span>{x[0]}</span><b>{x[1]}</b><p>Элемент связан с авторами и историей изменений.</p></article>)}</div><footer><div><span>СЛЕДУЮЩИЙ ШАГ</span><b>Эксперт проверяет результат</b></div><button onClick={()=>notify("Результат отправлен эксперту")}>Отправить эксперту →</button></footer></div>}</div>}
       {workTab==="contribution"&&<div className="work-view"><div className="view-heading"><div><span>ПРОЗРАЧНЫЙ СЛЕД АВТОРСТВА</span><h2>Вклад и будущая выплата</h2></div></div><div className="contribution-summary"><div><Ring value={78}/><span><b>Ваш вклад подтверждён</b><small>9 действий вошли в историю миссии</small></span></div><div><small>ПРОГНОЗ ВЫПЛАТЫ</small><strong>42 000–58 000 ₽</strong><span>после утверждения пилота</span></div></div><div className="contribution-grid"><section><header>ИСТОРИЯ ВКЛАДА</header>{[["Анализ пикового потока","+18%"],["Комментарий вошёл в решение A","+12%"],["Результаты интервью","+9%"],["Метрика безопасности","+7%"]].map(x=><article key={x[0]}><i>✓</i><b>{x[0]}</b><strong>{x[1]}</strong></article>)}</section><section><span>ФОНД МИССИИ</span><h3>600 000 ₽</h3><p>Средства резервируются до старта оплачиваемого пилота.</p><div><span>Командам</span><b>420 000 ₽</b></div><div><span>Внедрение</span><b>120 000 ₽</b></div><div><span>Проверка</span><b>60 000 ₽</b></div></section></div></div>}
     </section><aside className="workspace-chat"><header>ЧАТ КОМАНДЫ</header><div className="chat-people">{["АН","ТИ","МА","ДЕ","ВЫ"].map(x=><i key={x}>{x}</i>)}</div><div className="chat-stream">{messages.map((m,i)=><p key={i}>{m}</p>)}</div><form onSubmit={e=>{e.preventDefault();sendMessage()}}><input value={message} onChange={e=>setMessage(e.target.value)} placeholder="Написать команде…"/><button>↑</button></form></aside></div></section>}
+    {!workspace&&<button className={`sound-toggle ${soundOn?"active":""}`} onClick={toggleSound} aria-pressed={soundOn} title={soundOn?"Выключить звук":"Включить звук"}><i>{soundOn?"♪":"×"}</i><span>{soundOn?"Звук включён":"Включить звук"}</span></button>}
     {!workspace&&<button className="guide-button" onClick={()=>setGuide(!guide)}><i>?</i><span>Как пользоваться сайтом</span></button>}
     {guide&&!workspace&&<aside className="guide-panel"><button onClick={()=>setGuide(false)}>×</button><span>БЫСТРЫЙ СТАРТ</span><h3>Пройдите путь участника</h3><ol><li><i>1</i><p><b>Откройте миссию</b><small>Сразу увидите задачу, фонд и срок.</small></p></li><li><i>2</i><p><b>Вступите без отбора</b><small>Выберите свои сильные стороны.</small></p></li><li><i>3</i><p><b>Изучите ИИ-команду</b><small>Откройте задачи, синтез, вклад и выплату.</small></p></li></ol><button className="primary-button" onClick={()=>{setGuide(false);document.getElementById("missions")?.scrollIntoView({behavior:"smooth"});notify("Нажмите «Открыть» на первой миссии")}}>Начать с первой миссии ↓</button><button className="guide-demo" onClick={()=>{setGuide(false);setWorkspace(true);setWorkTab("overview")}}>Сразу открыть рабочее пространство →</button></aside>}
     {toast&&<div className="toast"><i>✓</i>{toast}</div>}
