@@ -73,6 +73,8 @@ export default function Home(){
   const [scrollProgress,setScrollProgress]=useState(0);
   const [soundOn,setSoundOn]=useState(false);
   const audioRef=useRef<AudioContext|null>(null);
+  const ambientTimerRef=useRef<number|null>(null);
+  const ambientGainRef=useRef<GainNode|null>(null);
 
   const playSound=(kind:"tap"|"success"|"synthesis",force=false)=>{
     if(!soundOn&&!force||typeof window==="undefined")return;
@@ -93,7 +95,16 @@ export default function Home(){
       oscillator.start(now+index*.055);oscillator.stop(now+index*.055+(kind==="tap"?.08:.2));
     });
   };
-  const toggleSound=()=>{const next=!soundOn;setSoundOn(next);localStorage.setItem("sorazum-sound",JSON.stringify(next));if(next)window.setTimeout(()=>playSound("success",true),20)};
+  const toggleSound=()=>{
+    const next=!soundOn;
+    if(next&&typeof window!=="undefined"){
+      const AudioEngine=window.AudioContext;
+      const context=audioRef.current||new AudioEngine();audioRef.current=context;
+      if(context.state==="suspended")void context.resume();
+    }
+    setSoundOn(next);localStorage.setItem("sorazum-sound",JSON.stringify(next));
+    if(next)window.setTimeout(()=>playSound("success",true),20);
+  };
 
   useEffect(()=>{ try{ setFavorites(JSON.parse(localStorage.getItem("sorazum-favorites")||"[]")); setCustom(JSON.parse(localStorage.getItem("sorazum-missions")||"[]")); setSoundOn(JSON.parse(localStorage.getItem("sorazum-sound")||"false")); }catch{} },[]);
   useEffect(()=>localStorage.setItem("sorazum-favorites",JSON.stringify(favorites)),[favorites]);
@@ -114,6 +125,45 @@ export default function Home(){
     const tap=(event:PointerEvent)=>{if((event.target as HTMLElement).closest("button,a"))playSound("tap")};
     document.addEventListener("pointerdown",tap);
     return()=>document.removeEventListener("pointerdown",tap);
+  },[soundOn]);
+  useEffect(()=>{
+    if(!soundOn||typeof window==="undefined")return;
+    const AudioEngine=window.AudioContext;
+    const context=audioRef.current||new AudioEngine();audioRef.current=context;
+    const master=context.createGain();
+    master.gain.setValueAtTime(.0001,context.currentTime);
+    master.gain.exponentialRampToValueAtTime(.72,context.currentTime+.9);
+    master.connect(context.destination);ambientGainRef.current=master;
+    const harmony=[[130.81,164.81,196],[146.83,174.61,220],[123.47,155.56,196],[110,146.83,164.81]];
+    const melody=[[392,440],[440,493.88],[369.99,440],[329.63,392]];
+    let bar=0;
+    const scheduleBar=()=>{
+      const output=ambientGainRef.current;if(!output)return;
+      if(context.state==="suspended")return;
+      const start=context.currentTime+.06;const chord=harmony[bar%harmony.length];const lead=melody[bar%melody.length];
+      chord.forEach((frequency,index)=>{
+        const oscillator=context.createOscillator();const gain=context.createGain();
+        oscillator.type="sine";oscillator.frequency.setValueAtTime(frequency,start);
+        gain.gain.setValueAtTime(.0001,start+index*.09);
+        gain.gain.exponentialRampToValueAtTime(.0032,start+.7+index*.09);
+        gain.gain.exponentialRampToValueAtTime(.0001,start+4.75);
+        oscillator.connect(gain);gain.connect(output);oscillator.start(start+index*.09);oscillator.stop(start+4.8);
+      });
+      lead.forEach((frequency,index)=>{
+        const noteStart=start+1.45+index*1.55;const oscillator=context.createOscillator();const gain=context.createGain();
+        oscillator.type="triangle";oscillator.frequency.setValueAtTime(frequency,noteStart);
+        gain.gain.setValueAtTime(.0001,noteStart);gain.gain.exponentialRampToValueAtTime(.0045,noteStart+.08);gain.gain.exponentialRampToValueAtTime(.0001,noteStart+1.35);
+        oscillator.connect(gain);gain.connect(output);oscillator.start(noteStart);oscillator.stop(noteStart+1.4);
+      });
+      bar+=1;
+    };
+    scheduleBar();ambientTimerRef.current=window.setInterval(scheduleBar,5000);
+    return()=>{
+      if(ambientTimerRef.current!==null)window.clearInterval(ambientTimerRef.current);
+      ambientTimerRef.current=null;ambientGainRef.current=null;
+      master.gain.cancelScheduledValues(context.currentTime);master.gain.setTargetAtTime(.0001,context.currentTime,.08);
+      window.setTimeout(()=>{try{master.disconnect()}catch{}},500);
+    };
   },[soundOn]);
 
   const missions=useMemo(()=>[...custom,...seedMissions],[custom]);
@@ -170,7 +220,7 @@ export default function Home(){
       {workTab==="synthesis"&&<div className="work-view synth-view"><div className="view-heading"><div><span>SORAZUM AI · ФИНАЛ УТВЕРЖДАЕТ ЧЕЛОВЕК</span><h2>Синтез решений</h2></div>{synthesis==="idle"&&<button onClick={runSynthesis}>Запустить анализ ✦</button>}</div>{synthesis==="idle"&&<div className="synth-empty"><i>✦</i><h3>Три решения готовы к сравнению</h3><p>ИИ найдёт совпадения, противоречия и совместимые элементы.</p><button className="primary-button" onClick={runSynthesis}>Начать синтез</button></div>}{synthesis==="running"&&<div className="synth-running"><Ring value={synthProgress}/><h3>ИИ сравнивает 47 элементов</h3><p>{synthProgress<40?"Выделяем ключевые идеи…":synthProgress<75?"Проверяем совместимость…":"Формируем карту вклада…"}</p><i><em style={{width:`${synthProgress}%`}}/></i></div>}{synthesis==="ready"&&<div className="synth-ready"><header><span>✓ СИНТЕЗ ЗАВЕРШЁН</span><h3>Безопасная зона высадки с прогнозом утреннего потока</h3><p>Соединены маршрут команды A, сценарий команды B и модель команды C.</p></header><div>{[["A · 42%","Схема движения"],["B · 24%","Работа с родителями"],["C · 34%","Прогноз потока"]].map(x=><article key={x[0]}><span>{x[0]}</span><b>{x[1]}</b><p>Элемент связан с авторами и историей изменений.</p></article>)}</div><footer><div><span>СЛЕДУЮЩИЙ ШАГ</span><b>Эксперт проверяет результат</b></div><button onClick={()=>notify("Результат отправлен эксперту")}>Отправить эксперту →</button></footer></div>}</div>}
       {workTab==="contribution"&&<div className="work-view"><div className="view-heading"><div><span>ПРОЗРАЧНЫЙ СЛЕД АВТОРСТВА</span><h2>Вклад и будущая выплата</h2></div></div><div className="contribution-summary"><div><Ring value={78}/><span><b>Ваш вклад подтверждён</b><small>9 действий вошли в историю миссии</small></span></div><div><small>ПРОГНОЗ ВЫПЛАТЫ</small><strong>42 000–58 000 ₽</strong><span>после утверждения пилота</span></div></div><div className="contribution-grid"><section><header>ИСТОРИЯ ВКЛАДА</header>{[["Анализ пикового потока","+18%"],["Комментарий вошёл в решение A","+12%"],["Результаты интервью","+9%"],["Метрика безопасности","+7%"]].map(x=><article key={x[0]}><i>✓</i><b>{x[0]}</b><strong>{x[1]}</strong></article>)}</section><section><span>ФОНД МИССИИ</span><h3>600 000 ₽</h3><p>Средства резервируются до старта оплачиваемого пилота.</p><div><span>Командам</span><b>420 000 ₽</b></div><div><span>Внедрение</span><b>120 000 ₽</b></div><div><span>Проверка</span><b>60 000 ₽</b></div></section></div></div>}
     </section><aside className="workspace-chat"><header>ЧАТ КОМАНДЫ</header><div className="chat-people">{["АН","ТИ","МА","ДЕ","ВЫ"].map(x=><i key={x}>{x}</i>)}</div><div className="chat-stream">{messages.map((m,i)=><p key={i}>{m}</p>)}</div><form onSubmit={e=>{e.preventDefault();sendMessage()}}><input value={message} onChange={e=>setMessage(e.target.value)} placeholder="Написать команде…"/><button>↑</button></form></aside></div></section>}
-    {!workspace&&<button className={`sound-toggle ${soundOn?"active":""}`} onClick={toggleSound} aria-pressed={soundOn} title={soundOn?"Выключить звук":"Включить звук"}><i>{soundOn?"♪":"×"}</i><span>{soundOn?"Звук включён":"Включить звук"}</span></button>}
+    {!workspace&&<button className={`sound-toggle ${soundOn?"active":""}`} onClick={toggleSound} aria-pressed={soundOn} title={soundOn?"Выключить звук и музыку":"Включить звук и музыку"}><i>{soundOn?"♪":"×"}</i><span>{soundOn?"Музыка включена":"Включить музыку"}</span></button>}
     {!workspace&&<button className="guide-button" onClick={()=>setGuide(!guide)}><i>?</i><span>Как пользоваться сайтом</span></button>}
     {guide&&!workspace&&<aside className="guide-panel"><button onClick={()=>setGuide(false)}>×</button><span>БЫСТРЫЙ СТАРТ</span><h3>Пройдите путь участника</h3><ol><li><i>1</i><p><b>Откройте миссию</b><small>Сразу увидите задачу, фонд и срок.</small></p></li><li><i>2</i><p><b>Вступите без отбора</b><small>Выберите свои сильные стороны.</small></p></li><li><i>3</i><p><b>Изучите ИИ-команду</b><small>Откройте задачи, синтез, вклад и выплату.</small></p></li></ol><button className="primary-button" onClick={()=>{setGuide(false);document.getElementById("missions")?.scrollIntoView({behavior:"smooth"});notify("Нажмите «Открыть» на первой миссии")}}>Начать с первой миссии ↓</button><button className="guide-demo" onClick={()=>{setGuide(false);setWorkspace(true);setWorkTab("overview")}}>Сразу открыть рабочее пространство →</button></aside>}
     {toast&&<div className="toast"><i>✓</i>{toast}</div>}
