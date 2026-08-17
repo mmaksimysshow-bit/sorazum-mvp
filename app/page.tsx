@@ -1,253 +1,131 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import type { CSSProperties } from "react";
+import { useEffect, useMemo, useState } from "react";
 
+type Category = "Все" | "Города" | "Медицина" | "Экология" | "Промышленность" | "Образование";
 type Mission = {
-  id: number;
-  sector: string;
-  title: string;
-  description: string;
-  prize: string;
-  people: number;
-  days: number;
-  skills: string[];
-  featured?: boolean;
+  id: string; category: Exclude<Category, "Все">; location: string; title: string;
+  description: string; goal: string; fund: number; days: number; people: number;
+  skills: string[]; deliverables: string[]; featured?: boolean; new?: boolean;
 };
+type WorkTab = "overview" | "tasks" | "team" | "synthesis" | "contribution";
+type TaskStatus = "todo" | "doing" | "done";
+type Task = { id: number; title: string; owner: string; tag: string; status: TaskStatus };
 
-const missions: Mission[] = [
-  {
-    id: 1,
-    sector: "ГОРОДСКАЯ СРЕДА",
-    title: "Сократить пробки у школ в часы пик",
-    description: "Нужно предложить решение, которое повысит безопасность детей и уменьшит заторы без масштабной перестройки улиц.",
-    prize: "600 000 ₽",
-    people: 84,
-    days: 12,
-    skills: ["Урбанистика", "Аналитика", "Дизайн"],
-    featured: true,
-  },
-  {
-    id: 2,
-    sector: "МЕДИЦИНА",
-    title: "Уменьшить ожидание записи к врачу",
-    description: "Найдите способ перераспределить поток пациентов и освободить время врачей без снижения качества помощи.",
-    prize: "450 000 ₽",
-    people: 56,
-    days: 18,
-    skills: ["Медицина", "Data Science", "Продукт"],
-  },
-  {
-    id: 3,
-    sector: "ПРОМЫШЛЕННОСТЬ",
-    title: "Снизить потери энергии на производстве",
-    description: "Предложите проверяемую систему обнаружения лишнего расхода энергии на действующем предприятии.",
-    prize: "900 000 ₽",
-    people: 71,
-    days: 21,
-    skills: ["Инженерия", "IoT", "Экономика"],
-  },
+const categories: Category[] = ["Все", "Города", "Медицина", "Экология", "Промышленность", "Образование"];
+const money = new Intl.NumberFormat("ru-RU");
+
+const seedMissions: Mission[] = [
+  { id:"school", category:"Города", location:"Липецк · Россия", title:"Безопасная дорога к школе без новых пробок", description:"Нужно сократить заторы у школ и сделать путь детей безопаснее без масштабной перестройки улиц.", goal:"Подготовить решение, которое можно протестировать у одной школы за 30 дней.", fund:600000, days:12, people:84, skills:["Урбанистика","Аналитика","Дизайн","Образование"], deliverables:["Карта проблемных точек","Два сценария пилота","Расчёт эффекта и стоимости"], featured:true },
+  { id:"doctor", category:"Медицина", location:"Москва · Россия", title:"Сократить ожидание записи к врачу", description:"Найдите способ перераспределить поток пациентов и освободить время врачей без снижения качества помощи.", goal:"Собрать проверяемую модель маршрутизации пациентов для одной поликлиники.", fund:450000, days:18, people:56, skills:["Медицина","Data Science","Продукт","Сервис-дизайн"], deliverables:["Карта пути пациента","Алгоритм распределения","План тестирования"] },
+  { id:"energy", category:"Промышленность", location:"Шанхай · Китай", title:"Найти скрытые потери энергии на производстве", description:"Нужна система обнаружения лишнего расхода энергии без остановки предприятия.", goal:"Создать прототип мониторинга и расчёт окупаемости на реальных типах оборудования.", fund:900000, days:21, people:71, skills:["Инженерия","IoT","Экономика","ML"], deliverables:["Модель обнаружения потерь","Схема датчиков","Экономическая модель"] },
+  { id:"water", category:"Экология", location:"Алматы · Казахстан", title:"Предупреждать загрязнение малых рек раньше", description:"Создайте доступную систему раннего обнаружения загрязнения воды для районов без сложных лабораторий.", goal:"Предложить сеть наблюдения, которая показывает риск до лабораторного заключения.", fund:750000, days:16, people:63, skills:["Экология","Химия","IoT","ГИС"], deliverables:["Схема мониторинга","Модель риска","План пилота"], new:true },
+  { id:"learning", category:"Образование", location:"Бишкек · Кыргызстан", title:"Дать школьникам доступ к сильным наставникам", description:"Нужно соединить школы из небольших городов с наставниками и измерять реальный прогресс учеников.", goal:"Разработать программу, которую можно запустить в десяти школах.", fund:380000, days:24, people:47, skills:["Педагогика","EdTech","Исследования","Комьюнити"], deliverables:["Механика подбора","Программа на 8 недель","Метрики результата"] },
+  { id:"food", category:"Экология", location:"Белград · Сербия", title:"Сократить списание продуктов в торговых сетях", description:"Предложите систему прогноза и перераспределения товаров с коротким сроком хранения.", goal:"Снизить списания минимум на 15% в пилоте на двадцати магазинах.", fund:820000, days:20, people:59, skills:["Логистика","ML","Ритейл","Экономика"], deliverables:["Модель прогноза","Маршруты перераспределения","План интеграции"] }
 ];
 
-export default function Home() {
-  const [filter, setFilter] = useState("Все миссии");
-  const [selectedMission, setSelectedMission] = useState<Mission | null>(null);
-  const [joinStep, setJoinStep] = useState<"details" | "profile" | "team">("details");
-  const [name, setName] = useState("");
-  const [skills, setSkills] = useState("");
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [customerOpen, setCustomerOpen] = useState(false);
-  const [draftTitle, setDraftTitle] = useState("");
-  const [draftBudget, setDraftBudget] = useState("");
-  const [customMissions, setCustomMissions] = useState<Mission[]>([]);
-  const [toast, setToast] = useState("");
-  const [workspaceOpen, setWorkspaceOpen] = useState(false);
-  const [synthesisRunning, setSynthesisRunning] = useState(false);
-  const [synthesisReady, setSynthesisReady] = useState(false);
-  const [chatText, setChatText] = useState("");
-  const [chatMessages, setChatMessages] = useState(["Анна: Я добавила результаты интервью с родителями.", "Тимур: Проверяю данные по пиковым 30 минутам."]);
-  const allMissions = useMemo(() => [...customMissions, ...missions], [customMissions]);
-  const visible = useMemo(
-    () => filter === "Все миссии" ? allMissions : allMissions.filter((mission) => mission.sector.includes(filter.toUpperCase())),
-    [filter, allMissions],
-  );
-  const scrollToMissions = () => document.getElementById("missions")?.scrollIntoView({ behavior: "smooth" });
-  const closeMission = () => { setSelectedMission(null); setJoinStep("details"); setIsAnalyzing(false); };
-  const buildTeam = () => {
-    if (!name.trim() || !skills.trim()) return;
-    setIsAnalyzing(true);
-    window.setTimeout(() => { setIsAnalyzing(false); setJoinStep("team"); }, 1450);
-  };
-  const publishMission = () => {
-    if (!draftTitle.trim() || !draftBudget.trim()) return;
-    const normalizedBudget = draftBudget.replace(/[^0-9]/g, "") || "500000";
-    setCustomMissions([{ id: Date.now(), sector: "НОВАЯ МИССИЯ", title: draftTitle, description: "Задача опубликована заказчиком и открыта для формирования первых команд.", prize: `${Number(normalizedBudget).toLocaleString("ru-RU")} ₽`, people: 0, days: 30, skills: ["Аналитика", "Исследования", "Продукт"], featured: true }, ...customMissions]);
-    setCustomerOpen(false); setDraftTitle(""); setDraftBudget(""); setFilter("Все миссии");
-    setToast("Миссия опубликована и появилась в каталоге"); scrollToMissions();
-    window.setTimeout(() => setToast(""), 3200);
-  };
-  const runSynthesis = () => {
-    setSynthesisRunning(true);
-    window.setTimeout(() => { setSynthesisRunning(false); setSynthesisReady(true); }, 1800);
-  };
-  const sendChat = () => {
-    if (!chatText.trim()) return;
-    setChatMessages([...chatMessages, `${name || "Максим"}: ${chatText.trim()}`]); setChatText("");
-  };
+const seedTasks: Task[] = [
+  {id:1,title:"Собрать причины пробок у трёх школ",owner:"АН",tag:"Исследование",status:"done"},
+  {id:2,title:"Проверить данные за утренний час пик",owner:"ТИ",tag:"Аналитика",status:"doing"},
+  {id:3,title:"Нарисовать схему безопасной высадки",owner:"МА",tag:"Дизайн",status:"doing"},
+  {id:4,title:"Посчитать стоимость тестового запуска",owner:"ДЕ",tag:"Экономика",status:"todo"},
+  {id:5,title:"Подготовить вопросы директору школы",owner:"ВЫ",tag:"Интервью",status:"todo"}
+];
 
-  return (
-    <main>
-      <header className="site-header">
-        <a className="brand" href="#top" aria-label="SORAZUM — на главную"><span className="brand-mark">S</span><span>SORAZUM</span></a>
-        <nav aria-label="Главная навигация"><a href="#missions">Миссии</a><a href="#how">Как работает</a><a href="#ai">SORAZUM AI</a></nav>
-        <button className="header-button" onClick={() => setCustomerOpen(true)}>Разместить задачу</button>
-      </header>
+const flow = [
+  ["01","Задача опубликована","Критерии, срок и призовой фонд видны заранее."],
+  ["02","Люди вступают сами","Без вступительного задания и скрытого отбора."],
+  ["03","ИИ собирает команды","Навыки, языки и время участников дополняют друг друга."],
+  ["04","Команды создают решения","Разные подходы уменьшают риск ошибки."],
+  ["05","СИНТЕЗ усиливает итог","ИИ предлагает сочетание, человек утверждает результат."]
+];
 
-      <section className="hero" id="top">
-        <div className="hero-copy">
-          <div className="eyebrow"><span /> ПЛАТФОРМА КОЛЛЕКТИВНОГО РАЗУМА</div>
-          <h1>Одна реальная проблема.<br /><em>Сотни сильных умов.</em></h1>
-          <p>Компании и государство размещают оплачиваемые задачи. Люди сами присоединяются, а ИИ собирает из них сильные команды и объединяет лучшие части решений в один результат.</p>
-          <div className="hero-actions">
-            <button className="primary-button" onClick={scrollToMissions}>Найти миссию <span>↗</span></button>
-            <button className="text-link text-button" onClick={() => setCustomerOpen(true)}>Разместить задачу <span>→</span></button>
-          </div>
-          <div className="hero-proof">
-            <div><strong>3</strong><span>активные миссии</span></div>
-            <div><strong>211</strong><span>участников</span></div>
-            <div><strong>1,95 млн ₽</strong><span>общий призовой фонд</span></div>
-          </div>
-        </div>
+function Logo(){ return <span className="logo"><i>S</i><b>SORAZUM</b></span> }
+function Ring({value}:{value:number}){ return <span className="ring" style={{"--p":`${value*3.6}deg`} as CSSProperties}><b>{value}%</b></span> }
 
-        <div className="intelligence-card" aria-label="Демонстрация работы коллективного интеллекта">
-          <div className="card-topline"><span>SORAZUM / LIVE</span><span className="live"><i /> ИИ анализирует</span></div>
-          <div className="core-visual">
-            <div className="orbit orbit-one"><span className="node n1">UX</span><span className="node n2">DATA</span></div>
-            <div className="orbit orbit-two"><span className="node n3">ГОРОД</span><span className="node n4">ECO</span></div>
-            <div className="core"><small>СИНТЕЗ</small><b>87%</b></div>
-          </div>
-          <div className="synthesis-result"><span>УСИЛЕННОЕ РЕШЕНИЕ</span><strong>4 команды → 1 итог</strong><div className="meter"><i /></div><p>Лучшие совместимые идеи найдены и объединены</p></div>
-        </div>
-      </section>
+export default function Home(){
+  const [menu,setMenu]=useState(false);
+  const [query,setQuery]=useState("");
+  const [category,setCategory]=useState<Category>("Все");
+  const [sort,setSort]=useState("recommended");
+  const [favorites,setFavorites]=useState<string[]>([]);
+  const [custom,setCustom]=useState<Mission[]>([]);
+  const [selected,setSelected]=useState<Mission|null>(null);
+  const [missionTab,setMissionTab]=useState<"brief"|"result"|"payment">("brief");
+  const [joinStep,setJoinStep]=useState(0);
+  const [name,setName]=useState("");
+  const [skills,setSkills]=useState<string[]>([]);
+  const [matching,setMatching]=useState(false);
+  const [flowStep,setFlowStep]=useState(2);
+  const [workspace,setWorkspace]=useState(false);
+  const [workTab,setWorkTab]=useState<WorkTab>("overview");
+  const [tasks,setTasks]=useState(seedTasks);
+  const [messages,setMessages]=useState(["Анна: Добавила итоги разговоров с родителями.","Тимур: Нашёл пик нагрузки с 07:42 до 08:11."]);
+  const [message,setMessage]=useState("");
+  const [synthesis,setSynthesis]=useState<"idle"|"running"|"ready">("idle");
+  const [synthProgress,setSynthProgress]=useState(0);
+  const [customer,setCustomer]=useState(false);
+  const [customerStep,setCustomerStep]=useState(1);
+  const [draft,setDraft]=useState({org:"",title:"",problem:"",result:"",fund:"600000",days:"30"});
+  const [toast,setToast]=useState("");
 
-      <section className="mission-section" id="missions">
-        <div className="section-heading">
-          <div><div className="eyebrow"><span /> ОТКРЫТЫЕ ЗАДАЧИ</div><h2>Выберите проблему,<br />которую хотите решить</h2></div>
-          <p>Не нужно проходить вступительные задания. Покажите навыки в реальной работе и получите оплату за принятый вклад.</p>
-        </div>
-        <div className="filters" role="group" aria-label="Фильтр миссий">
-          {["Все миссии", "Медицина", "Промышленность", "Городская среда"].map((item) => <button key={item} className={filter === item ? "active" : ""} onClick={() => setFilter(item)}>{item}</button>)}
-        </div>
-        <div className="mission-grid">
-          {visible.map((mission) => (
-            <article className={`mission-card ${mission.featured ? "featured" : ""}`} key={mission.id}>
-              <div className="mission-meta"><span>{mission.sector}</span><b>{mission.days} дней</b></div>
-              <h3>{mission.title}</h3><p>{mission.description}</p>
-              <div className="tags">{mission.skills.map((skill) => <span key={skill}>{skill}</span>)}</div>
-              <div className="mission-bottom"><div><small>ПРИЗОВОЙ ФОНД</small><strong>{mission.prize}</strong></div><div className="people"><span>+{mission.people}</span><small>участников</small></div><button onClick={() => setSelectedMission(mission)} aria-label={`Открыть миссию: ${mission.title}`}>→</button></div>
-            </article>
-          ))}
-        </div>
-      </section>
+  useEffect(()=>{ try{ setFavorites(JSON.parse(localStorage.getItem("sorazum-favorites")||"[]")); setCustom(JSON.parse(localStorage.getItem("sorazum-missions")||"[]")); }catch{} },[]);
+  useEffect(()=>localStorage.setItem("sorazum-favorites",JSON.stringify(favorites)),[favorites]);
+  useEffect(()=>localStorage.setItem("sorazum-missions",JSON.stringify(custom)),[custom]);
+  useEffect(()=>{ const close=(e:KeyboardEvent)=>{ if(e.key==="Escape"){setMenu(false);setSelected(null);setCustomer(false);setWorkspace(false)} }; window.addEventListener("keydown",close); return()=>window.removeEventListener("keydown",close) },[]);
 
-      <section className="how-section" id="how">
-        <div className="eyebrow"><span /> МЕХАНИКА ПЛАТФОРМЫ</div><h2>Не конкурс идей.<br /><em>Система создания результата.</em></h2>
-        <div className="steps">
-          {[
-            ["01", "Заказчик ставит задачу", "Фиксирует критерии результата, срок и реальный призовой фонд."],
-            ["02", "Люди вступают сами", "Участник выбирает интересную миссию и показывает свои сильные стороны."],
-            ["03", "ИИ собирает команды", "SORAZUM распределяет роли и формирует несколько сбалансированных команд."],
-            ["04", "Лучшее становится одним", "ИИ сравнивает результаты, соединяет совместимые части и фиксирует вклад каждого."],
-          ].map(([number, title, text]) => <article key={number}><span>{number}</span><h3>{title}</h3><p>{text}</p></article>)}
-        </div>
-      </section>
+  const missions=useMemo(()=>[...custom,...seedMissions],[custom]);
+  const visible=useMemo(()=>{
+    const q=query.toLowerCase().trim();
+    const list=missions.filter(m=>(category==="Все"||m.category===category)&&(!q||[m.title,m.description,m.location,...m.skills].join(" ").toLowerCase().includes(q)));
+    if(sort==="fund") return [...list].sort((a,b)=>b.fund-a.fund);
+    if(sort==="deadline") return [...list].sort((a,b)=>a.days-b.days);
+    return list;
+  },[missions,query,category,sort]);
+  const notify=(text:string)=>{setToast(text);window.setTimeout(()=>setToast(""),2600)};
+  const toggleFavorite=(id:string)=>setFavorites(v=>v.includes(id)?v.filter(x=>x!==id):[...v,id]);
+  const toggleSkill=(skill:string)=>setSkills(v=>v.includes(skill)?v.filter(x=>x!==skill):[...v,skill]);
+  const matchTeam=()=>{if(!name.trim()||!skills.length)return;setMatching(true);window.setTimeout(()=>{setMatching(false);setJoinStep(2)},1400)};
+  const moveTask=(id:number)=>{const next:Record<TaskStatus,TaskStatus>={todo:"doing",doing:"done",done:"todo"};setTasks(v=>v.map(t=>t.id===id?{...t,status:next[t.status]}:t))};
+  const runSynthesis=()=>{if(synthesis==="running")return;setWorkTab("synthesis");setSynthesis("running");setSynthProgress(6);let p=6;const timer=window.setInterval(()=>{p+=9;setSynthProgress(Math.min(p,100));if(p>=100){window.clearInterval(timer);setSynthesis("ready")}},190)};
+  const sendMessage=()=>{if(!message.trim())return;setMessages(v=>[...v,`${name||"Максим"}: ${message.trim()}`]);setMessage("")};
+  const publish=()=>{const m:Mission={id:`custom-${Date.now()}`,category:"Города",location:"Весь мир · онлайн",title:draft.title,description:draft.problem,goal:draft.result,fund:Number(draft.fund.replace(/\D/g,""))||600000,days:Number(draft.days)||30,people:0,skills:["Аналитика","Исследования","Продукт"],deliverables:["Анализ проблемы","Несколько решений","План пилота"],featured:true,new:true};setCustom(v=>[m,...v]);setCustomer(false);setCustomerStep(1);setDraft({org:"",title:"",problem:"",result:"",fund:"600000",days:"30"});notify("Миссия опубликована в каталоге");window.setTimeout(()=>document.getElementById("missions")?.scrollIntoView({behavior:"smooth"}),80)};
+  const done=tasks.filter(t=>t.status==="done").length;
+  const progress=Math.round(22+(done/tasks.length)*70);
 
-      <section className="ai-section" id="ai">
-        <div className="section-heading">
-          <div><div className="eyebrow"><span /> SORAZUM AI</div><h2>ИИ не решает за людей.<br /><em>Он делает команду сильнее.</em></h2></div>
-          <p>Платформа понимает навыки участников, собирает несколько разных команд и показывает, какие части решений можно безопасно соединить.</p>
-        </div>
-        <div className="ai-workspace">
-          <div className="workspace-sidebar">
-            <div className="workspace-title"><span className="brand-mark">S</span><div><b>Миссия #001</b><small>Пробки у школ</small></div></div>
-            <div className="side-step done"><i>✓</i><span><b>84 профиля изучено</b><small>навыки и опыт</small></span></div>
-            <div className="side-step active"><i>02</i><span><b>Команды собраны</b><small>4 разных подхода</small></span></div>
-            <div className="side-step"><i>03</i><span><b>Синтез решений</b><small>после сдачи работ</small></span></div>
-          </div>
-          <div className="workspace-main">
-            <div className="workspace-head"><div><small>ИИ-СБОРКА</small><h3>Четыре команды без одинакового мышления</h3></div><span className="ai-status"><i /> ГОТОВО</span></div>
-            <div className="team-row highlight"><div className="team-number">A</div><div className="avatars"><span>АК</span><span>ТС</span><span>МР</span><span>+3</span></div><div><b>Системное решение</b><small>урбанист · аналитик · инженер · педагог</small></div><strong>94%</strong></div>
-            <div className="team-row"><div className="team-number">B</div><div className="avatars"><span>ЕВ</span><span>ОД</span><span>НК</span><span>+2</span></div><div><b>Поведенческий подход</b><small>психолог · дизайнер · социолог</small></div><strong>91%</strong></div>
-            <div className="team-row"><div className="team-number">C</div><div className="avatars"><span>ДМ</span><span>РХ</span><span>ИЛ</span><span>+3</span></div><div><b>Технологический подход</b><small>data scientist · IoT · транспорт</small></div><strong>89%</strong></div>
-            <div className="workspace-note"><b>Почему не одна команда?</b><span>Несколько независимых подходов уменьшают риск ошибки. В финале SORAZUM соединит их лучшие совместимые части.</span></div>
-          </div>
-        </div>
-      </section>
+  return <main className="site-shell">
+    <header className="site-header"><a href="#top" className="brand-link"><Logo/></a><nav className="desktop-nav"><a href="#missions">Миссии</a><a href="#mechanics">Как работает</a><a href="#ai">ИИ-синтез</a><a href="#trust">Вклад и выплаты</a></nav><div className="header-actions"><button className="ghost-button desktop-only" onClick={()=>{setWorkspace(true);setWorkTab("overview")}}>Демо-пространство</button><button className="accent-button" onClick={()=>setCustomer(true)}>Разместить задачу <span>↗</span></button><button className="menu-button" onClick={()=>setMenu(!menu)} aria-label="Меню"><i/><i/></button></div></header>
+    {menu&&<nav className="mobile-menu"><a href="#missions" onClick={()=>setMenu(false)}>Миссии</a><a href="#mechanics" onClick={()=>setMenu(false)}>Как работает</a><a href="#ai" onClick={()=>setMenu(false)}>ИИ-синтез</a><a href="#trust" onClick={()=>setMenu(false)}>Вклад и выплаты</a><button onClick={()=>{setMenu(false);setWorkspace(true)}}>Открыть демо-пространство</button></nav>}
 
-      <footer><div className="brand"><span className="brand-mark">S</span><span>SORAZUM</span></div><p>Умные люди уже есть по всему миру. Мы даём им одну реальную задачу.</p><button className="primary-button" onClick={scrollToMissions}>Открыть миссии <span>↗</span></button></footer>
+    <section className="hero" id="top"><div className="hero-copy"><div className="eyebrow"><i/> МИРОВАЯ ПЛАТФОРМА КОЛЛЕКТИВНОГО РАЗУМА</div><h1>Одна реальная задача.<br/><em>Лучшие умы со всего мира.</em></h1><p>Компании и государства публикуют оплачиваемые проблемы. Люди сами присоединяются, а ИИ собирает международные команды и соединяет сильные части их решений.</p><div className="hero-actions"><button className="primary-button" onClick={()=>document.getElementById("missions")?.scrollIntoView({behavior:"smooth"})}>Выбрать миссию <span>↗</span></button><button className="link-button" onClick={()=>setWorkspace(true)}>Посмотреть рабочее пространство <span>→</span></button></div><div className="hero-trust"><span><i>✓</i> Просмотр без регистрации</span><span><i>✓</i> Фонд виден заранее</span><span><i>✓</i> Вклад фиксируется</span></div></div>
+      <div className="world-console"><div className="console-top"><span>SORAZUM / GLOBAL LIVE</span><b><i/> СИСТЕМА АКТИВНА</b></div><div className="world-map"><div className="map-grid"/>{["Липецк","Алматы","Шанхай","Белград"].map((city,i)=><button key={city} className={`map-node n${i+1}`} onClick={()=>notify(`${city}: команда подключена`)}><i/>{city}</button>)}<div className="map-core"><span>СИНТЕЗ</span><strong>4→1</strong><small>решения</small></div><svg viewBox="0 0 600 380" preserveAspectRatio="none"><path d="M90 100 C190 90 235 170 300 190"/><path d="M100 290 C205 280 240 220 300 190"/><path d="M510 90 C405 90 370 160 300 190"/><path d="M500 290 C405 280 370 220 300 190"/></svg></div><div className="console-result"><div><span>СОВМЕСТИМОСТЬ РЕШЕНИЙ</span><strong>87%</strong></div><i><em/></i><p>Найдено 7 совместимых элементов. Финал подтверждают эксперт и заказчик.</p></div></div>
+    </section>
 
-      {selectedMission && (
-        <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.currentTarget === event.target && closeMission()}>
-          <section className="mission-modal" role="dialog" aria-modal="true" aria-label="Вступление в миссию">
-            <button className="modal-close" onClick={closeMission} aria-label="Закрыть">×</button>
-            {joinStep === "details" && <>
-              <div className="modal-kicker">{selectedMission.sector} · {selectedMission.days} ДНЕЙ</div>
-              <h2>{selectedMission.title}</h2><p className="modal-lead">{selectedMission.description}</p>
-              <div className="modal-facts"><div><small>ПРИЗОВОЙ ФОНД</small><strong>{selectedMission.prize}</strong></div><div><small>УЖЕ УЧАСТВУЮТ</small><strong>{selectedMission.people} человек</strong></div><div><small>ФОРМАТ</small><strong>Несколько команд</strong></div></div>
-              <div className="mission-brief"><b>Что получит заказчик</b><p>Несколько независимых решений, прозрачный вклад каждого участника и один усиленный итог после ИИ-синтеза.</p></div>
-              <button className="primary-button wide" onClick={() => setJoinStep("profile")}>Вступить без отбора <span>→</span></button>
-            </>}
-            {joinStep === "profile" && <>
-              <div className="modal-kicker">ШАГ 1 ИЗ 2 · ПРОФИЛЬ ДЛЯ КОМАНДЫ</div><h2>Расскажите, в чём вы сильны</h2><p className="modal-lead">Это не отбор. ИИ использует информацию только для подбора роли и людей, которые дополнят ваши навыки.</p>
-              <label className="field"><span>Ваше имя</span><input value={name} onChange={(e) => setName(e.target.value)} placeholder="Например, Максим" autoFocus /></label>
-              <label className="field"><span>Навыки и опыт</span><textarea value={skills} onChange={(e) => setSkills(e.target.value)} placeholder="Например: анализ данных, городские проекты, презентации" /></label>
-              <button className="primary-button wide" disabled={!name.trim() || !skills.trim() || isAnalyzing} onClick={buildTeam}>{isAnalyzing ? "ИИ собирает команду…" : "Собрать мою команду"}<span>{isAnalyzing ? "•••" : "→"}</span></button>
-            </>}
-            {joinStep === "team" && <>
-              <div className="success-mark">✓</div><div className="modal-kicker">КОМАНДА НАЙДЕНА · СОВМЕСТИМОСТЬ 93%</div><h2>{name}, вы в команде №4</h2><p className="modal-lead">Ваши навыки дополняют четыре участника. У команды нет повторяющихся ролей и есть всё для первого решения.</p>
-              <div className="matched-team"><div><span>{name.slice(0,2).toUpperCase()}</span><b>{name}</b><small>ваша сильная сторона</small></div><div><span>АС</span><b>Анна</b><small>исследование</small></div><div><span>ТК</span><b>Тимур</b><small>аналитика</small></div><div><span>МВ</span><b>Мария</b><small>дизайн</small></div><div><span>ДР</span><b>Денис</b><small>внедрение</small></div></div>
-              <button className="primary-button wide" onClick={() => { closeMission(); setWorkspaceOpen(true); }}>Открыть рабочее пространство <span>↗</span></button>
-            </>}
-          </section>
-        </div>
-      )}
+    <section className="signal-strip"><span>ДЕМО В РЕАЛЬНОМ ВРЕМЕНИ</span><div><strong>{missions.length}</strong><small>миссий</small></div><div><strong>{missions.reduce((a,m)=>a+m.people,0)}</strong><small>участников</small></div><div><strong>{money.format(missions.reduce((a,m)=>a+m.fund,0))} ₽</strong><small>общий фонд</small></div><div><strong>4 страны</strong><small>в одной системе</small></div></section>
 
-      {workspaceOpen && (
-        <section className="product-overlay" role="dialog" aria-modal="true" aria-label="Рабочее пространство команды">
-          <header className="product-header"><div className="brand"><span className="brand-mark">S</span><span>SORAZUM</span></div><div className="product-mission"><small>МИССИЯ #001</small><b>Безопасная дорога к школе</b></div><div className="product-actions"><span className="online-dot">4 онлайн</span><span className="profile-chip">{(name || "Максим").slice(0,2).toUpperCase()}</span><button onClick={() => setWorkspaceOpen(false)} aria-label="Закрыть рабочее пространство">×</button></div></header>
-          <div className="product-body">
-            <aside className="product-nav">
-              <button className="active"><span>⌂</span>Обзор</button><button><span>□</span>Задачи</button><button><span>◌</span>Команда</button><button><span>✦</span>AI-синтез</button><button><span>↗</span>Материалы</button>
-              <div className="mission-progress"><small>ПРОГРЕСС МИССИИ</small><div><i /></div><b>42%</b><span>12 дней до результата</span></div>
-            </aside>
-            <main className="product-main">
-              <div className="product-welcome"><div><small>КОМАНДА №4 · СИСТЕМНЫЙ ПОДХОД</small><h2>Добрый день, {name || "Максим"}</h2><p>Сегодня нужно закончить анализ проблемы и выбрать две идеи для проверки.</p></div><button onClick={runSynthesis} disabled={synthesisRunning}>{synthesisRunning ? "ИИ сравнивает материалы…" : synthesisReady ? "Синтез обновлён ✓" : "Запустить ИИ-синтез ✦"}</button></div>
-              <div className="product-grid">
-                <section className="board-card"><div className="card-heading"><b>Задачи команды</b><span>5 задач</span></div>
-                  <div className="task-columns"><div><small>НУЖНО СДЕЛАТЬ · 2</small><article><span className="task-tag research">ИССЛЕДОВАНИЕ</span><b>Проверить причины пробок</b><p>Сравнить наблюдения у трёх школ</p><div><i>ТС</i><time>сегодня</time></div></article><article><span className="task-tag">ИДЕЯ</span><b>Схема безопасной высадки</b><p>Черновик сценария движения</p><div><i>МВ</i><time>завтра</time></div></article></div><div><small>В РАБОТЕ · 2</small><article><span className="task-tag data">ДАННЫЕ</span><b>Карта пиковых потоков</b><p>84% данных уже обработано</p><div className="mini-progress"><i /></div><div><i>ТК</i><time>84%</time></div></article><article><span className="task-tag research">ИНТЕРВЬЮ</span><b>Родители и учителя</b><p>12 из 15 разговоров готовы</p><div><i>АС</i><time>12/15</time></div></article></div></div>
-                </section>
-                <aside className="ai-panel"><div className="card-heading"><b>SORAZUM AI</b><span className="ai-status"><i /> LIVE</span></div>
-                  {!synthesisReady ? <><div className="ai-orb">✦</div><h3>Материалы готовы к первому синтезу</h3><p>ИИ сравнит данные, интервью и идеи команды. Он не заменит ваше решение — только покажет совпадения, противоречия и пробелы.</p><button onClick={runSynthesis} disabled={synthesisRunning}>{synthesisRunning ? "Анализирую…" : "Начать анализ"}</button></> : <div className="synthesis-output"><div className="success-mark">✓</div><h3>Найден общий сильный ход</h3><p>Данные Тимура подтверждают наблюдение Анны: 68% затора создаётся в последние 12 минут до звонка.</p><div><small>РЕКОМЕНДАЦИЯ</small><b>Проверить разнесённые окна высадки + безопасный маршрут последних 200 метров.</b></div><span>Совместимость материалов: 92%</span></div>}
-                </aside>
-              </div>
-            </main>
-            <aside className="chat-panel"><div className="card-heading"><b>Команда</b><span>4 онлайн</span></div><div className="team-mini"><span>АС</span><span>ТК</span><span>МВ</span><span>ДР</span></div><div className="chat-stream">{chatMessages.map((message, index) => <p key={`${message}-${index}`}>{message}</p>)}</div><div className="chat-input"><input value={chatText} onChange={(e) => setChatText(e.target.value)} onKeyDown={(e) => e.key === "Enter" && sendChat()} placeholder="Написать команде…"/><button onClick={sendChat}>↑</button></div></aside>
-          </div>
-        </section>
-      )}
+    <section className="mission-section" id="missions"><div className="section-heading"><div><div className="eyebrow"><i/> КАТАЛОГ МИССИЙ</div><h2>Выберите проблему,<br/>которую хотите решить</h2></div><p>Не нужно ждать, пока вас найдут. Откройте задачу, изучите правила и сами вступите в миссию.</p></div><div className="catalog-tools"><label className="search-field"><span>⌕</span><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Поиск по проблеме, стране или навыку"/><button onClick={()=>setQuery("")}>×</button></label><label className="sort-field"><span>Сортировка</span><select value={sort} onChange={e=>setSort(e.target.value)}><option value="recommended">Рекомендуемые</option><option value="fund">Большой фонд</option><option value="deadline">Короткий срок</option></select></label></div><div className="category-row">{categories.map(c=><button key={c} className={category===c?"active":""} onClick={()=>setCategory(c)}>{c}</button>)}</div><div className="catalog-result"><span>Найдено: {visible.length}</span>{favorites.length>0&&<span>♡ Сохранено: {favorites.length}</span>}</div><div className="mission-grid">{visible.map(m=><article className={`mission-card ${m.featured?"featured":""}`} key={m.id}><div className="mission-top"><div><span>{m.category}</span><small>{m.location}</small></div><button className={`favorite ${favorites.includes(m.id)?"active":""}`} onClick={()=>toggleFavorite(m.id)}>{favorites.includes(m.id)?"♥":"♡"}</button></div><div className="mission-labels">{m.new&&<span>НОВАЯ</span>}<small>{m.days} дней до закрытия</small></div><h3>{m.title}</h3><p>{m.description}</p><div className="skill-list">{m.skills.slice(0,3).map(s=><span key={s}>{s}</span>)}{m.skills.length>3&&<span>+{m.skills.length-3}</span>}</div><div className="mission-progress"><div><span>Собираются команды</span><b>{Math.min(88,28+m.people)}%</b></div><i><em style={{width:`${Math.min(88,28+m.people)}%`}}/></i></div><div className="mission-footer"><div><small>ПРИЗОВОЙ ФОНД</small><strong>{money.format(m.fund)} ₽</strong></div><div><small>УЧАСТНИКИ</small><strong>{m.people}</strong></div><button onClick={()=>{setSelected(m);setJoinStep(0);setMissionTab("brief")}}>Открыть <span>↗</span></button></div></article>)}</div>{!visible.length&&<div className="empty-state"><h3>Таких миссий пока нет</h3><p>Измените поиск или категорию.</p><button onClick={()=>{setQuery("");setCategory("Все")}}>Показать все</button></div>}</section>
 
-      {customerOpen && (
-        <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.currentTarget === event.target && setCustomerOpen(false)}>
-          <section className="mission-modal customer-modal" role="dialog" aria-modal="true" aria-label="Размещение задачи">
-            <button className="modal-close" onClick={() => setCustomerOpen(false)} aria-label="Закрыть">×</button>
-            <div className="modal-kicker">КАБИНЕТ ЗАКАЗЧИКА · НОВАЯ МИССИЯ</div><h2>Какую проблему нужно решить?</h2><p className="modal-lead">Опишите результат обычными словами. После публикации люди смогут сами вступить, а ИИ соберёт первые команды.</p>
-            <label className="field"><span>Название задачи</span><textarea value={draftTitle} onChange={(e) => setDraftTitle(e.target.value)} placeholder="Например: как сократить очередь в городской поликлинике" autoFocus /></label>
-            <label className="field"><span>Призовой фонд, ₽</span><input value={draftBudget} onChange={(e) => setDraftBudget(e.target.value)} inputMode="numeric" placeholder="500 000" /></label>
-            <div className="publish-summary"><span>Комиссия платформы 15%</span><b>Оплата участникам привязана к принятому вкладу</b></div>
-            <button className="primary-button wide" disabled={!draftTitle.trim() || !draftBudget.trim()} onClick={publishMission}>Опубликовать миссию <span>↗</span></button>
-          </section>
-        </div>
-      )}
-      {toast && <div className="toast" role="status"><i>✓</i>{toast}</div>}
-    </main>
-  );
+    <section className="mechanics-section" id="mechanics"><div className="section-heading light"><div><div className="eyebrow"><i/> ПОЛНЫЙ ПУТЬ МИССИИ</div><h2>От сложной проблемы<br/>до оплаченного результата</h2></div><p>Нажмите на этап — справа изменится демонстрация процесса.</p></div><div className="mechanics-layout"><div className="flow-list">{flow.map(([n,t,p],i)=><button key={n} className={flowStep===i?"active":""} onClick={()=>setFlowStep(i)}><span>{n}</span><div><b>{t}</b><small>{p}</small></div><i>→</i></button>)}</div><div className="flow-preview"><header><span>МИССИЯ #001 / ЭТАП {flowStep+1}</span><b>{(flowStep+1)*20}%</b></header><div><Ring value={(flowStep+1)*20}/><article><small>СЕЙЧАС ПРОИСХОДИТ</small><h3>{flow[flowStep][1]}</h3><p>{flow[flowStep][2]}</p></article></div><footer><span>✓ Событие записано</span><span>✓ Заказчик видит прогресс</span><span>✓ Авторство сохранено</span></footer></div></div></section>
+
+    <section className="ai-section" id="ai"><div className="section-heading"><div><div className="eyebrow"><i/> SORAZUM AI</div><h2>ИИ не заменяет людей.<br/><em>Он соединяет их мышление.</em></h2></div><p>Система создаёт разные команды, сравнивает решения и показывает совместимые части. Финальный выбор остаётся за человеком.</p></div><div className="ai-product"><aside><Logo/><small>МИССИЯ #001</small><h3>Безопасная дорога к школе</h3><nav><span className="done"><i>✓</i>84 профиля изучено</span><span className="done"><i>✓</i>4 команды собраны</span><span className="active"><i>03</i>Решения сравниваются</span><span><i>04</i>Финал утверждает человек</span></nav><button onClick={()=>{setWorkspace(true);setWorkTab("synthesis")}}>Открыть рабочее демо ↗</button></aside><div className="ai-main"><header><div><small>СИНТЕЗ РЕШЕНИЙ</small><h3>Четыре подхода усиливают друг друга</h3></div><span><i/> анализ идёт</span></header><div className="solution-stack">{[["A","Изменение движения","94%"],["B","Поведенческий сценарий","91%"],["C","Прогноз потока","89%"]].map(x=><button key={x[0]} onClick={()=>notify(`Решение ${x[0]}: совместимость ${x[2]}`)}><i>{x[0]}</i><div><b>{x[1]}</b><small>отдельный подход команды</small></div><strong>{x[2]}</strong><span>↗</span></button>)}</div><div className="synthesis-card"><i>✦</i><div><small>УСИЛЕННЫЙ ИТОГ</small><h3>Безопасная зона высадки + прогноз утреннего потока</h3><p>В результат вошли части решений A, B и C. Связь с авторами сохранена.</p><span>A · 42%　 B · 24%　 C · 34%</span></div><button onClick={()=>{setWorkspace(true);setWorkTab("synthesis")}}>Открыть</button></div></div></div></section>
+
+    <section className="trust-section" id="trust"><div className="section-heading light"><div><div className="eyebrow"><i/> ДОВЕРИЕ И ОПЛАТА</div><h2>Деньги и авторство<br/>не исчезают в процессе</h2></div><p>До старта участник видит фонд и правила. После сдачи система показывает вклад и основание выплаты.</p></div><div className="trust-grid"><article><span>01</span><i>₽</i><h3>Фонд резервируется</h3><p>Бюджет подтверждается до начала работы и виден всем участникам.</p></article><article><span>02</span><i>⌁</i><h3>Вклад остаётся видимым</h3><p>Версии, файлы и элементы финального решения связываются с авторами.</p></article><article><span>03</span><i>✓</i><h3>Человек подтверждает итог</h3><p>ИИ предлагает синтез, но эксперт и заказчик утверждают результат.</p></article></div><div className="payout-demo"><div><small>ДЕМО-РАСПРЕДЕЛЕНИЕ ФОНДА</small><h3>600 000 ₽</h3><p>Миссия «Безопасная дорога к школе»</p></div><div className="payout-bar"><i style={{width:"42%"}}>A · 42%</i><i style={{width:"24%"}}>B · 24%</i><i style={{width:"34%"}}>C · 34%</i></div><button onClick={()=>{setWorkspace(true);setWorkTab("contribution")}}>Посмотреть вклад ↗</button></div></section>
+
+    <section className="final-cta"><div><div className="eyebrow"><i/> ПЕРВЫЙ ПЛАТНЫЙ ПИЛОТ</div><h2>У вас есть проблема.<br/>У мира уже есть люди,<br/><em>которые могут её решить.</em></h2></div><div><p>Разместите одну настоящую задачу. SORAZUM покажет путь от добровольного участия до команд, синтеза, вклада и выплаты.</p><button className="primary-button" onClick={()=>setCustomer(true)}>Запустить пилот ↗</button></div></section>
+    <footer className="site-footer"><Logo/><p>Платформа коллективного разума для реальных оплачиваемых задач.</p><nav><a href="#missions">Миссии</a><a href="#mechanics">Механика</a><button onClick={()=>setCustomer(true)}>Заказчикам</button></nav><small>© 2026 SORAZUM · Демо-версия MVP</small></footer>
+
+    {selected&&<div className="modal-backdrop" onMouseDown={e=>e.currentTarget===e.target&&setSelected(null)}><section className="mission-modal" role="dialog" aria-modal="true"><button className="modal-close" onClick={()=>setSelected(null)}>×</button>{joinStep===0&&<><div className="modal-title"><span>{selected.category} · {selected.location}</span><h2>{selected.title}</h2></div><nav className="modal-tabs"><button className={missionTab==="brief"?"active":""} onClick={()=>setMissionTab("brief")}>Задача</button><button className={missionTab==="result"?"active":""} onClick={()=>setMissionTab("result")}>Что нужно сдать</button><button className={missionTab==="payment"?"active":""} onClick={()=>setMissionTab("payment")}>Оплата</button></nav>{missionTab==="brief"&&<div className="modal-content"><p className="modal-lead">{selected.description}</p><div className="goal-card"><small>ЦЕЛЬ МИССИИ</small><p>{selected.goal}</p></div><h3>Какие навыки пригодятся</h3><div className="skill-list large">{selected.skills.map(s=><span key={s}>{s}</span>)}</div></div>}{missionTab==="result"&&<div className="modal-content"><h3>Итоговые материалы</h3><ul>{selected.deliverables.map(x=><li key={x}><i>✓</i>{x}</li>)}</ul></div>}{missionTab==="payment"&&<div className="modal-content"><div className="payment-big"><small>ПРИЗОВОЙ ФОНД</small><strong>{money.format(selected.fund)} ₽</strong><span>условия видны до вступления</span></div><div className="payment-steps"><p><b>70%</b><span>командам за принятый результат</span></p><p><b>20%</b><span>за доработку и внедрение</span></p><p><b>10%</b><span>проверка и платформа</span></p></div></div>}<div className="modal-bottom"><span>{selected.people} участников · {selected.days} дней</span><button className="primary-button" onClick={()=>setJoinStep(1)}>Вступить без отбора →</button></div></>}{joinStep===1&&<div className="join-form"><span>ПРОФИЛЬ ДЛЯ ИИ-СБОРКИ · 1 МИНУТА</span><h2>В чём вы сильны?</h2><p>Это не отбор. Данные нужны только для подбора роли и людей, которые дополнят ваши навыки.</p><label><span>Как к вам обращаться</span><input value={name} onChange={e=>setName(e.target.value)} placeholder="Например, Максим" autoFocus/></label><div className="choice-field"><span>Сильные стороны</span><div>{["Аналитика","Исследования","Дизайн","Инженерия","Презентации","Управление"].map(s=><button key={s} className={skills.includes(s)?"active":""} onClick={()=>toggleSkill(s)}>{skills.includes(s)?"✓ ":"+ "}{s}</button>)}</div></div><button className="primary-button wide" disabled={!name.trim()||!skills.length||matching} onClick={matchTeam}>{matching?"ИИ сравнивает профили…":"Найти мою команду →"}</button></div>}{joinStep===2&&<div className="team-match"><i>✓</i><span>КОМАНДА НАЙДЕНА · 93% СОВМЕСТИМОСТИ</span><h2>{name}, вы в международной команде №4</h2><p>Пять разных ролей, четыре страны и общее рабочее время.</p><div className="matched-people">{[[name.slice(0,2).toUpperCase(),name,skills[0]],["АН","Анна","Исследования · Россия"],["ТИ","Тимур","Данные · Казахстан"],["МА","Мария","Дизайн · Сербия"],["ДЕ","Ден","Внедрение · Китай"]].map((p,i)=><article key={i} className={i===0?"you":""}><span>{p[0]}</span><b>{p[1]}</b><small>{p[2]}</small></article>)}</div><button className="primary-button wide" onClick={()=>{setSelected(null);setWorkspace(true)}}>Открыть рабочее пространство ↗</button></div>}</section></div>}
+
+    {customer&&<div className="modal-backdrop" onMouseDown={e=>e.currentTarget===e.target&&setCustomer(false)}><section className="customer-modal"><button className="modal-close" onClick={()=>setCustomer(false)}>×</button><header><div><span>СОЗДАНИЕ МИССИИ</span><h2>Опишите реальную проблему</h2></div><b>{customerStep}/3</b></header><div className="wizard-progress"><i style={{width:`${customerStep*33.33}%`}}/></div>{customerStep===1&&<div className="wizard-body"><p>Не пишите готовое решение. Расскажите, что сейчас не работает.</p><label><span>Организация</span><input value={draft.org} onChange={e=>setDraft({...draft,org:e.target.value})} placeholder="Название организации"/></label><label><span>Название задачи</span><input value={draft.title} onChange={e=>setDraft({...draft,title:e.target.value})} placeholder="Например: сократить пробки у школ"/></label><label><span>В чём проблема</span><textarea value={draft.problem} onChange={e=>setDraft({...draft,problem:e.target.value})} placeholder="Кого это затрагивает и почему обычный подход не помогает?"/></label><button className="primary-button wide" disabled={!draft.title||!draft.problem} onClick={()=>setCustomerStep(2)}>Дальше →</button></div>}{customerStep===2&&<div className="wizard-body"><p>Укажите измеримый итог и бюджет.</p><label><span>Что должно получиться</span><textarea value={draft.result} onChange={e=>setDraft({...draft,result:e.target.value})} placeholder="Решение, готовое к пилоту за 30 дней"/></label><div className="field-row"><label><span>Фонд, ₽</span><input value={draft.fund} onChange={e=>setDraft({...draft,fund:e.target.value})}/></label><label><span>Срок, дней</span><input value={draft.days} onChange={e=>setDraft({...draft,days:e.target.value})}/></label></div><div className="wizard-actions"><button onClick={()=>setCustomerStep(1)}>← Назад</button><button className="primary-button" disabled={!draft.result} onClick={()=>setCustomerStep(3)}>Проверить →</button></div></div>}{customerStep===3&&<div className="wizard-body"><div className="mission-preview"><span>ПРЕДПРОСМОТР</span><small>{draft.org||"Организация"}</small><h3>{draft.title}</h3><p>{draft.problem}</p><div><b>{money.format(Number(draft.fund)||600000)} ₽</b><b>{draft.days} дней</b></div></div><div className="wizard-actions"><button onClick={()=>setCustomerStep(2)}>← Назад</button><button className="primary-button" onClick={publish}>Опубликовать ↗</button></div></div>}</section></div>}
+
+    {workspace&&<section className="workspace-overlay"><header className="workspace-header"><Logo/><div><small>МИССИЯ #001</small><b>Безопасная дорога к школе</b></div><nav><span><i/>4 онлайн</span><b>{(name||"Максим").slice(0,2).toUpperCase()}</b><button onClick={()=>setWorkspace(false)}>×</button></nav></header><div className="workspace-body"><aside className="workspace-nav"><div><span>КОМАНДА №4</span><b>Системный подход</b><small>5 участников · 4 страны</small></div>{([['overview','⌂','Обзор'],['tasks','□','Задачи'],['team','◎','Команда'],['synthesis','✦','AI-синтез'],['contribution','₽','Вклад и оплата']] as const).map(([id,icon,label])=><button key={id} className={workTab===id?"active":""} onClick={()=>setWorkTab(id)}><i>{icon}</i>{label}</button>)}<footer><span>ПРОГРЕСС МИССИИ</span><i><em style={{width:`${progress}%`}}/></i><b>{progress}%</b><small>12 дней до результата</small></footer></aside><section className="workspace-content"><nav className="workspace-mobile-nav">{([['overview','Обзор'],['tasks','Задачи'],['team','Команда'],['synthesis','Синтез'],['contribution','Вклад']] as const).map(([id,label])=><button key={id} className={workTab===id?"active":""} onClick={()=>setWorkTab(id)}>{label}</button>)}</nav>
+      {workTab==="overview"&&<div className="work-view"><div className="work-welcome"><div><span>ДОБРЫЙ ДЕНЬ, {(name||"МАКСИМ").toUpperCase()}</span><h2>Сегодня выберите две идеи для проверки</h2><p>Команда синхронизирована, новые материалы уже внутри.</p></div><button onClick={runSynthesis}>Запустить AI-синтез ✦</button></div><div className="overview-grid"><section className="tasks-panel"><header><span>ЗАДАЧИ КОМАНДЫ</span><button onClick={()=>setWorkTab("tasks")}>Все →</button></header>{tasks.slice(0,4).map(t=><button key={t.id} onClick={()=>moveTask(t.id)}><i className={t.status}>{t.status==="done"?"✓":t.status==="doing"?"◐":"○"}</i><div><b>{t.title}</b><small>{t.tag}</small></div><span>{t.owner}</span></button>)}</section><section className="team-panel"><span>КОМАНДА</span><div>{["АН","ТИ","МА","ДЕ","ВЫ"].map(x=><i key={x}>{x}</i>)}</div><p>Следующее включение</p><b>Сегодня, 18:30</b><button onClick={()=>setWorkTab("team")}>Открыть команду</button></section><section className="quick-ai"><span>✦ SORAZUM AI</span><h3>{synthesis==="ready"?"Синтез готов":"3 решения готовы"}</h3><p>Совпадения, противоречия и вклад авторов.</p><button onClick={runSynthesis}>{synthesis==="ready"?"Открыть результат":"Начать синтез"} →</button></section></div></div>}
+      {workTab==="tasks"&&<div className="work-view"><div className="view-heading"><div><span>РАБОЧИЙ ПРОЦЕСС</span><h2>Задачи команды</h2></div><button onClick={()=>setTasks(v=>[...v,{id:Date.now(),title:"Новая задача команды",owner:"ВЫ",tag:"Новая",status:"todo"}])}>+ Добавить задачу</button></div><div className="kanban">{([['todo','НУЖНО СДЕЛАТЬ'],['doing','В РАБОТЕ'],['done','ГОТОВО']] as const).map(([status,label])=><section key={status}><header><span>{label}</span><b>{tasks.filter(t=>t.status===status).length}</b></header>{tasks.filter(t=>t.status===status).map(t=><article key={t.id}><span>{t.tag}</span><h3>{t.title}</h3><div><i>{t.owner}</i><button onClick={()=>moveTask(t.id)}>{status==="done"?"Вернуть":"Дальше →"}</button></div></article>)}</section>)}</div></div>}
+      {workTab==="team"&&<div className="work-view"><div className="view-heading"><div><span>ИИ-СБОРКА · 93% СОВМЕСТИМОСТИ</span><h2>Пять разных ролей — одна команда</h2></div></div><div className="team-directory">{[["АН","Анна Коваль","Исследователь","Россия"],["ТИ","Тимур Садыков","Аналитик данных","Казахстан"],["МА","Мария Петрович","Сервис-дизайнер","Сербия"],["ДЕ","Ден Ли","Инженер внедрения","Китай"],["ВЫ",name||"Максим Дементьев",skills[0]||"Стратег","Россия"]].map(p=><article key={p[0]} className={p[0]==="ВЫ"?"you":""}><i>{p[0]}</i><div><h3>{p[1]}</h3><p>{p[2]}</p></div><small>{p[3]}</small><span>● Онлайн</span></article>)}</div></div>}
+      {workTab==="synthesis"&&<div className="work-view synth-view"><div className="view-heading"><div><span>SORAZUM AI · ФИНАЛ УТВЕРЖДАЕТ ЧЕЛОВЕК</span><h2>Синтез решений</h2></div>{synthesis==="idle"&&<button onClick={runSynthesis}>Запустить анализ ✦</button>}</div>{synthesis==="idle"&&<div className="synth-empty"><i>✦</i><h3>Три решения готовы к сравнению</h3><p>ИИ найдёт совпадения, противоречия и совместимые элементы.</p><button className="primary-button" onClick={runSynthesis}>Начать синтез</button></div>}{synthesis==="running"&&<div className="synth-running"><Ring value={synthProgress}/><h3>ИИ сравнивает 47 элементов</h3><p>{synthProgress<40?"Выделяем ключевые идеи…":synthProgress<75?"Проверяем совместимость…":"Формируем карту вклада…"}</p><i><em style={{width:`${synthProgress}%`}}/></i></div>}{synthesis==="ready"&&<div className="synth-ready"><header><span>✓ СИНТЕЗ ЗАВЕРШЁН</span><h3>Безопасная зона высадки с прогнозом утреннего потока</h3><p>Соединены маршрут команды A, сценарий команды B и модель команды C.</p></header><div>{[["A · 42%","Схема движения"],["B · 24%","Работа с родителями"],["C · 34%","Прогноз потока"]].map(x=><article key={x[0]}><span>{x[0]}</span><b>{x[1]}</b><p>Элемент связан с авторами и историей изменений.</p></article>)}</div><footer><div><span>СЛЕДУЮЩИЙ ШАГ</span><b>Эксперт проверяет результат</b></div><button onClick={()=>notify("Результат отправлен эксперту")}>Отправить эксперту →</button></footer></div>}</div>}
+      {workTab==="contribution"&&<div className="work-view"><div className="view-heading"><div><span>ПРОЗРАЧНЫЙ СЛЕД АВТОРСТВА</span><h2>Вклад и будущая выплата</h2></div></div><div className="contribution-summary"><div><Ring value={78}/><span><b>Ваш вклад подтверждён</b><small>9 действий вошли в историю миссии</small></span></div><div><small>ПРОГНОЗ ВЫПЛАТЫ</small><strong>42 000–58 000 ₽</strong><span>после утверждения пилота</span></div></div><div className="contribution-grid"><section><header>ИСТОРИЯ ВКЛАДА</header>{[["Анализ пикового потока","+18%"],["Комментарий вошёл в решение A","+12%"],["Результаты интервью","+9%"],["Метрика безопасности","+7%"]].map(x=><article key={x[0]}><i>✓</i><b>{x[0]}</b><strong>{x[1]}</strong></article>)}</section><section><span>ФОНД МИССИИ</span><h3>600 000 ₽</h3><p>Средства резервируются до старта оплачиваемого пилота.</p><div><span>Командам</span><b>420 000 ₽</b></div><div><span>Внедрение</span><b>120 000 ₽</b></div><div><span>Проверка</span><b>60 000 ₽</b></div></section></div></div>}
+    </section><aside className="workspace-chat"><header>ЧАТ КОМАНДЫ</header><div className="chat-people">{["АН","ТИ","МА","ДЕ","ВЫ"].map(x=><i key={x}>{x}</i>)}</div><div className="chat-stream">{messages.map((m,i)=><p key={i}>{m}</p>)}</div><form onSubmit={e=>{e.preventDefault();sendMessage()}}><input value={message} onChange={e=>setMessage(e.target.value)} placeholder="Написать команде…"/><button>↑</button></form></aside></div></section>}
+    {toast&&<div className="toast"><i>✓</i>{toast}</div>}
+  </main>
 }
